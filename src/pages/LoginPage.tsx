@@ -28,7 +28,29 @@ export default function LoginPage() {
   }
 
   return <main className="login-page">
-    <section className="login-visual" aria-hidden="true"><div className="login-orb login-orb--one" /><div className="login-orb login-orb--two" /><div className="login-visual__copy"><span>مدیریت یکپارچه</span><h1>صداباکس</h1><p>کاربران، انتشارها، درآمد و محتوای پلتفرم در یک پنل سریع و متمرکز.</p></div></section>
+    <section className="login-visual" aria-hidden="true">
+      <div
+        className="login-orb login-orb--one"
+        style={{ display: 'grid', placeItems: 'center', overflow: 'hidden' }}
+      >
+        <img
+          src="/sedabox-logo.png"
+          alt=""
+          draggable={false}
+          style={{
+            width: '44%',
+            height: '44%',
+            objectFit: 'contain',
+            position: 'relative',
+            zIndex: 2,
+            pointerEvents: 'none',
+            userSelect: 'none',
+          }}
+        />
+      </div>
+      <div className="login-orb login-orb--two" />
+      <div className="login-visual__copy"><span>مدیریت یکپارچه</span><h1>صداباکس</h1><p>کاربران، انتشارها، درآمد و محتوای پلتفرم در یک پنل سریع و متمرکز.</p></div>
+    </section>
     <section className="login-panel">
       <form className="login-card" onSubmit={submit}>
         <div className="login-brand"><img src="/sedabox-logo.png" alt="نشان صداباکس" /><div><strong>صداباکس</strong><span>پنل مدیریت</span></div></div>
