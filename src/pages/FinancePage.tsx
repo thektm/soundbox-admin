@@ -7,7 +7,7 @@ import { Card, ErrorState, Field, Modal, PageHeader, Pagination, SearchBox, Stat
 import { useToast } from '../components/toastContext'
 import { api, errorMessageFa, jsonBody, queryString } from '../lib/api'
 import { useDebouncedValue } from '../lib/hooks'
-import { dateTimeFa, moneyFa, numberFa, paymentMethodFa } from '../lib/format'
+import { dateTimeFa, moneyFa, numberFa, paymentMethodFa, preciseMoneyFa } from '../lib/format'
 import type { DepositRequest, Paginated, PaymentTransaction } from '../lib/types'
 import { useRemote } from '../lib/useRemote'
 import { pageSnapshot, reconcilePaginatedStable, removePaginatedItem, setPaginatedItem, verifyExactEntity } from '../lib/mutationSync'
@@ -144,13 +144,13 @@ export default function FinancePage() {
         {key:'artist',title:'هنرمند',render:x=><div><strong>{x.artist_name}</strong><div className="subline" dir="ltr">{x.artist_phone||'—'}</div></div>},
         {key:'verify',title:'وضعیت',render:x=><span className={`status ${x.verified?'status--success':'status--neutral'}`}>{x.verified?'تأیید شده':'تأیید نشده'}</span>},
         {key:'streams',title:'استریم',render:x=><strong>{numberFa(x.stream_count)}</strong>},
-        {key:'earned',title:'درآمد ثبت‌شده',render:x=><strong>{moneyFa(x.earned_total)}</strong>},
-        {key:'paid',title:'تسویه‌شده',render:x=>moneyFa(x.paid_total)},
-        {key:'pending',title:'در صف تسویه',render:x=>moneyFa(x.pending_total)},
-        {key:'remaining',title:'مانده قابل رهگیری',render:x=><strong>{moneyFa(x.remaining_total)}</strong>},
+        {key:'earned',title:'درآمد ثبت‌شده',render:x=><strong>{preciseMoneyFa(x.earned_total)}</strong>},
+        {key:'paid',title:'تسویه‌شده',render:x=>preciseMoneyFa(x.paid_total)},
+        {key:'pending',title:'در صف تسویه',render:x=>preciseMoneyFa(x.pending_total)},
+        {key:'remaining',title:'مانده قابل رهگیری',render:x=><strong>{preciseMoneyFa(x.remaining_total)}</strong>},
         {key:'action',title:'عملیات',render:x=><button className="button button--compact" onClick={()=>navigate(`/artists?q=${encodeURIComponent(x.artist_phone || x.artist_name)}`)}><Eye size={16}/>هنرمند</button>},
       ]}/>
-      {earnings.data && <><div className="table-summary"><span>کل درآمد ثبت‌شده نتایج</span><strong>{moneyFa(earnings.data.total_amount)}</strong></div><Pagination count={earnings.data.count} page={page} pageSize={20} onPage={setPage}/></>}
+      {earnings.data && <><div className="table-summary"><span>کل درآمد ثبت‌شده نتایج</span><strong>{preciseMoneyFa(earnings.data.total_amount)}</strong></div><Pagination count={earnings.data.count} page={page} pageSize={20} onPage={setPage}/></>}
     </>}</Card>
 
     <Modal open={Boolean(selectedPayment)} title="جزئیات پرداخت کاربر" onClose={()=>setSelectedPayment(null)}>{selectedPayment && <div className="receipt">

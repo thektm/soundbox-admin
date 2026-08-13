@@ -1,11 +1,16 @@
 const fa = new Intl.NumberFormat('fa-IR')
 const money = new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 2 })
+const preciseMoney = new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 6 })
 const dateTime = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeStyle: 'short' })
 const dateTimeTehran = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Tehran' })
 const dateOnly = new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium' })
 
 export const numberFa = (value: number | string | null | undefined) => fa.format(Number(value || 0))
 export const moneyFa = (value: number | string | null | undefined) => `${money.format(Number(value || 0))} تومان`
+export const preciseMoneyFa = (value: number | string | null | undefined) => {
+  const numeric = Number(value || 0)
+  return `${numeric === 0 ? '۰' : preciseMoney.format(numeric)} تومان`
+}
 export const dateFa = (value?: string | null) => value ? dateOnly.format(new Date(value)) : '—'
 export const dateTimeFa = (value?: string | null) => value ? dateTime.format(new Date(value)) : '—'
 export const dateTimeTehranFa = (value?: string | null) => value ? dateTimeTehran.format(new Date(value)) : '—'
