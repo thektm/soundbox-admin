@@ -16,7 +16,7 @@ type Draft = {
   label:string; label_en:string; producers:string; producers_en:string; composers:string; composers_en:string; lyricists:string; lyricists_en:string; credits:string; credits_en:string
 }
 
-type Props = { song:Song|null; initialPage?:1|2|3; onClose:()=>void; onSaved:(song:Song)=>Song|null|void|Promise<Song|null|void>; onRemoved?:(mode:'soft'|'hard')=>void|Promise<void> }
+type Props = { song:Song|null; initialPage?:1|2|3; onClose:()=>void; onSaved:(song:Song)=>Song|null|void|Promise<Song|null|void>; onRemoved?:(mode:'soft'|'hard')=>void|Promise<void>; allowSoftDelete?:boolean; allowHardDelete?:boolean }
 const emptyDraft:Draft = {
   title:'',title_en:'',description:'',description_en:'',lyrics:'',lyrics_en:'',release_date:'',language:'fa',is_single:false,album_disc_number:'1',album_track_number:'1',
   genres:[],sub_genres:[],moods:[],tags:[],tempo:'',energy:'',danceability:'',valence:'',acousticness:'',instrumentalness:'',speechiness:'',live_performed:false,
@@ -95,7 +95,7 @@ function AudioControl({label,value,onChange}:{label:string;value:string;onChange
   </div>
 }
 
-export function SongMetadataModal({song,initialPage=1,onClose,onSaved,onRemoved}:Props){
+export function SongMetadataModal({song,initialPage=1,onClose,onSaved,onRemoved,allowSoftDelete=false,allowHardDelete=false}:Props){
   const toast=useToast()
   const [detail,setDetail]=useState<Song|null>(song)
   const [draft,setDraft]=useState<Draft>(song?fromSong(song):emptyDraft)
@@ -114,13 +114,14 @@ export function SongMetadataModal({song,initialPage=1,onClose,onSaved,onRemoved}
 
   useEffect(()=>{
     if(!song)return
+    setPage(initialPage)
     let alive=true
     void api<Song>(`/admin/songs/${song.id}/`).then(full=>{
       if(!alive)return
       setDetail(full);setDraft(fromSong(full));setDirty(new Set())
     }).catch(err=>{if(alive)toast.show(errorMessageFa(err,'جزئیات کامل آهنگ دریافت نشد.'),'error')}).finally(()=>{if(alive)setLoading(false)})
     return()=>{alive=false}
-  },[song,toast])
+  },[song,initialPage,toast])
 
   const setField=<K extends keyof Draft>(key:K,value:Draft[K])=>{
     editVersion.current+=1
@@ -218,7 +219,7 @@ export function SongMetadataModal({song,initialPage=1,onClose,onSaved,onRemoved}
       </div>
       <footer className="song-meta-editor__footer">
         <div className="song-meta-editor__pager"><button type="button" className="button button--ghost button--compact" disabled={page===1} onClick={()=>setPage(current=>Math.max(1,current-1) as 1|2|3)}><ChevronRight size={15}/>قبلی</button><span>صفحه {numberFa(page)} از ۳</span><button type="button" className="button button--ghost button--compact" disabled={page===3} onClick={()=>setPage(current=>Math.min(3,current+1) as 1|2|3)}>بعدی<ChevronLeft size={15}/></button></div>
-        <div className="song-meta-editor__save"><span>{dirty.size?`${numberFa(dirty.size)} تغییر ذخیره‌نشده`:'همه تغییرات ذخیره شده'}</span><div className="song-meta-editor__actions">{detail.status!=='deleted'&&<button type="button" className="button button--ghost button--warning button--compact" onClick={()=>setRemoveMode('soft')}><EyeOff size={15}/>حذف امن</button>}<button type="button" className="button button--danger button--compact" onClick={()=>setRemoveMode('hard')}><Trash2 size={15}/>حذف دائمی</button><button type="button" className="button button--primary" disabled={saving||dirty.size===0} onClick={()=>void save()}>{saving?<LoaderCircle className="spin" size={16}/>:<Save size={16}/>}ذخیره تغییرات</button></div></div>
+        <div className="song-meta-editor__save"><span>{dirty.size?`${numberFa(dirty.size)} تغییر ذخیره‌نشده`:'همه تغییرات ذخیره شده'}</span><div className="song-meta-editor__actions">{allowSoftDelete&&detail.status!=='deleted'&&<button type="button" className="button button--ghost button--warning button--compact" onClick={()=>setRemoveMode('soft')}><EyeOff size={15}/>حذف امن</button>}{allowHardDelete&&<button type="button" className="button button--danger button--compact" onClick={()=>setRemoveMode('hard')}><Trash2 size={15}/>حذف دائمی</button>}<button type="button" className="button button--primary" disabled={saving||dirty.size===0} onClick={()=>void save()}>{saving?<LoaderCircle className="spin" size={16}/>:<Save size={16}/>}ذخیره تغییرات</button></div></div>
       </footer>
     </div>}
   </Modal>

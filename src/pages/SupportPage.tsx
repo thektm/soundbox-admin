@@ -9,6 +9,8 @@ import { dateTimeFa, numberFa } from '../lib/format'
 import { useDebouncedValue } from '../lib/hooks'
 import type { Paginated, Report, SupportTicket } from '../lib/types'
 import { useRemote } from '../lib/useRemote'
+import { useAuth } from '../lib/authContext'
+import { can } from '../lib/permissions'
 import { pageSnapshot, reconcilePaginatedStable, removePaginatedItem, setPaginatedItem, verifyExactEntity } from '../lib/mutationSync'
 
 type Tab='tickets'|'reports'
@@ -33,15 +35,16 @@ function ReportTargetLink({report,detail=false}:{report:Report;detail?:boolean})
 }
 
 export default function SupportPage(){
- const[tab,setTab]=useState<Tab>('tickets');const[badgeVersion,setBadgeVersion]=useState(0)
- const pendingTickets=useRemote<Paginated<SupportTicket>>('/admin/support/tickets/'+queryString({status:'open',page:1,page_size:1}),badgeVersion)
- const pendingReports=useRemote<Paginated<Report>>('/admin/reports/'+queryString({has_reviewed:false,page:1,page_size:1}),badgeVersion)
+ const {user}=useAuth();const canTickets=can(user,'support.tickets');const canReports=can(user,'support.reports')
+ const[tab,setTab]=useState<Tab>(()=>canTickets?'tickets':'reports');const[badgeVersion,setBadgeVersion]=useState(0)
+ const pendingTickets=useRemote<Paginated<SupportTicket>>(canTickets?'/admin/support/tickets/'+queryString({status:'open',page:1,page_size:1}):null,badgeVersion)
+ const pendingReports=useRemote<Paginated<Report>>(canReports?'/admin/reports/'+queryString({has_reviewed:false,page:1,page_size:1}):null,badgeVersion)
  const refreshBadges=()=>setBadgeVersion(value=>value+1)
  const ticketCount=pendingTickets.data?.count||0;const reportCount=pendingReports.data?.count||0
- return <div className="page-stack"><PageHeader title="پشتیبانی و گزارش‌ها" description="رسیدگی به تیکت هنرمندان و گزارش تخلف کاربران"/>
-  <div className="segmented segmented--wide support-tabs"><button className={tab==='tickets'?'is-active':''} onClick={()=>setTab('tickets')}><MessageSquareText size={17}/>تیکت هنرمندان{ticketCount>0?<b>{numberFa(ticketCount)}</b>:null}</button><button className={tab==='reports'?'is-active':''} onClick={()=>setTab('reports')}><ShieldAlert size={17}/>گزارش کاربران{reportCount>0?<b>{numberFa(reportCount)}</b>:null}</button></div>
-  <div className={`support-tab-panel${tab==='tickets'?' is-active':''}`} aria-hidden={tab!=='tickets'}><Tickets onChanged={refreshBadges}/></div>
-  <div className={`support-tab-panel${tab==='reports'?' is-active':''}`} aria-hidden={tab!=='reports'}><Reports onChanged={refreshBadges}/></div>
+ return <div className="page-stack"><PageHeader title="پشتیبانی و گزارش‌ها" description={canTickets&&canReports?"رسیدگی به تیکت هنرمندان و گزارش کاربران":canTickets?"رسیدگی به تیکت‌های هنرمندان":"بررسی گزارش‌های کاربران"}/>
+  <div className="segmented segmented--wide support-tabs">{canTickets&&<button className={tab==='tickets'?'is-active':''} onClick={()=>setTab('tickets')}><MessageSquareText size={17}/>تیکت هنرمندان{ticketCount>0?<b>{numberFa(ticketCount)}</b>:null}</button>}{canReports&&<button className={tab==='reports'?'is-active':''} onClick={()=>setTab('reports')}><ShieldAlert size={17}/>گزارش کاربران{reportCount>0?<b>{numberFa(reportCount)}</b>:null}</button>}</div>
+  {canTickets&&tab==='tickets'&&<div className="support-tab-panel is-active"><Tickets onChanged={refreshBadges}/></div>}
+  {canReports&&tab==='reports'&&<div className="support-tab-panel is-active"><Reports onChanged={refreshBadges}/></div>}
  </div>
 }
 

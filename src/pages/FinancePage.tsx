@@ -10,6 +10,8 @@ import { useDebouncedValue } from '../lib/hooks'
 import { dateTimeFa, moneyFa, numberFa, paymentMethodFa, preciseMoneyFa } from '../lib/format'
 import type { DepositRequest, Paginated, PaymentTransaction } from '../lib/types'
 import { useRemote } from '../lib/useRemote'
+import { useAuth } from '../lib/authContext'
+import { can } from '../lib/permissions'
 import { pageSnapshot, reconcilePaginatedStable, removePaginatedItem, setPaginatedItem, verifyExactEntity } from '../lib/mutationSync'
 
 type Period = {
@@ -24,9 +26,14 @@ type ArtistEarning = {
 type FinanceTab = 'payments' | 'payouts' | 'earnings'
 
 export default function FinancePage() {
+  const {user}=useAuth()
+  const canPayments=can(user,'finance.payments'), canPayouts=can(user,'finance.payouts'), canEarnings=can(user,'finance.earnings')
+  const canPayoutReview=can(user,'finance.payout_review'), canPayoutPay=can(user,'finance.payout_pay'), canArtists=can(user,'artists.view')
   const [params] = useSearchParams()
   const navigate = useNavigate()
-  const initialTab: FinanceTab = params.get('tab') === 'payouts' || params.get('tab') === 'earnings' ? params.get('tab') as FinanceTab : 'payments'
+  const requestedTab: FinanceTab = params.get('tab') === 'payouts' || params.get('tab') === 'earnings' ? params.get('tab') as FinanceTab : 'payments'
+  const allowedTabs:FinanceTab[]=[...(canPayments?['payments' as const]:[]),...(canPayouts?['payouts' as const]:[]),...(canEarnings?['earnings' as const]:[])]
+  const initialTab:FinanceTab=allowedTabs.includes(requestedTab)?requestedTab:(allowedTabs[0]||'payments')
   const [tab, setTab] = useState<FinanceTab>(initialTab)
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState(() => params.get('status') || '')
@@ -41,19 +48,20 @@ export default function FinancePage() {
   const [busy, setBusy] = useState(false)
   const q = useDebouncedValue(search)
   const toast = useToast()
-  const summary = useRemote<FinanceSummary>('/admin/finance/')
+  const summary = useRemote<FinanceSummary>((canPayments || canPayouts) ? '/admin/finance/' : null)
   const payments = useRemote<Paginated<PaymentTransaction>>(
-    tab === 'payments' ? '/admin/finance/transactions/' + queryString({ q, status, sort, direction, page, page_size:20 }) : null,
+    canPayments && tab === 'payments' ? '/admin/finance/transactions/' + queryString({ q, status, sort, direction, page, page_size:20 }) : null,
   )
   const payouts = useRemote<Paginated<DepositRequest>>(
-    tab === 'payouts' ? '/admin/finance/deposits/' + queryString({ q, status, sort, direction, page, page_size:20 }) : null,
+    canPayouts && tab === 'payouts' ? '/admin/finance/deposits/' + queryString({ q, status, sort, direction, page, page_size:20 }) : null,
   )
   const earnings = useRemote<Paginated<ArtistEarning>>(
-    tab === 'earnings' ? '/admin/finance/artist-earnings/' + queryString({ q, sort, direction, page, page_size:20 }) : null,
+    canEarnings && tab === 'earnings' ? '/admin/finance/artist-earnings/' + queryString({ q, sort, direction, page, page_size:20 }) : null,
   )
   const current = tab === 'payments' ? payments : tab === 'payouts' ? payouts : earnings
 
   function switchTab(next: FinanceTab) {
+    if(!allowedTabs.includes(next))return
     setTab(next); setSearch(''); setStatus(''); setPage(1); setDirection('desc'); setSort(next === 'earnings' ? 'earned' : 'time')
   }
   function openPayout(payout: DepositRequest) {
@@ -74,11 +82,13 @@ export default function FinancePage() {
   }
   async function savePayout() {
     if (!selectedPayout) return
+    if(payoutStatus==='done'?!canPayoutPay:!canPayoutReview)return
     const target=selectedPayout; const snapshot=pageSnapshot(payouts.data,target.id)
     const requestedStatus=payoutStatus; const requestedTransaction=transactionId.trim()
+    if(requestedStatus==='done'&&!requestedTransaction){toast.show('شماره تراکنش را وارد کنید.','error');return}
     setBusy(true)
     try {
-      const result = await api<DepositRequest>(`/admin/finance/deposits/${target.id}/`, { method:'PATCH', body:jsonBody({ status:requestedStatus, transaction_id:requestedTransaction }) })
+      const result = await api<DepositRequest>(`/admin/finance/deposits/${target.id}/`, { method:'PATCH', body:jsonBody({status:requestedStatus,...(canPayoutPay?{transaction_id:requestedTransaction}:{})}) })
       const optimistic={...target,...result,status:requestedStatus,transaction_id:requestedTransaction}
       payouts.setData(current=>setPayoutInPage(current,optimistic,snapshot.index))
       closePayout()
@@ -97,21 +107,31 @@ export default function FinancePage() {
     } catch (err) { toast.show(errorMessageFa(err), 'error') } finally { setBusy(false) }
   }
 
+  const payoutStatusOptions=selectedPayout?({
+    pending:[{value:'pending',label:'در انتظار'},...(canPayoutReview?[{value:'approved',label:'تأیید شده'},{value:'rejected',label:'رد شده'}]:[])],
+    approved:[{value:'approved',label:'تأیید شده'},...(canPayoutReview?[{value:'rejected',label:'رد شده'}]:[]),...(canPayoutPay?[{value:'done',label:'انجام شده'}]:[])],
+    rejected:[{value:'rejected',label:'رد شده'},...(canPayoutReview?[{value:'pending',label:'در انتظار'}]:[])],
+    done:[{value:'done',label:'انجام شده'}],
+  }[selectedPayout.status]||[{value:selectedPayout.status,label:selectedPayout.status}]):[]
+  const canEditSelectedPayout=Boolean(selectedPayout&&((canPayoutReview&&selectedPayout.status!=='done')||(canPayoutPay&&(selectedPayout.status==='approved'||selectedPayout.status==='done'))))
+  const payoutChanged=Boolean(selectedPayout&&(payoutStatus!==selectedPayout.status||(canPayoutPay&&transactionId.trim()!==String(selectedPayout.transaction_id||'').trim())))
+  const canSubmitPayout=Boolean(selectedPayout&&payoutChanged&&(payoutStatus==='done'?canPayoutPay:canPayoutReview))
+
   const all = summary.data?.all_time
   return <div className="page-stack">
     <PageHeader title="مالی و تسویه" description="پرداخت کاربران، تعهد مالی هنرمندان و چرخه کامل تسویه" />
     {all && <div className="finance-stats">
-      <Card><CircleDollarSign size={20}/><span>کل درآمد پلتفرم</span><strong>{moneyFa(all.revenue)}</strong><small>{numberFa(all.successful_payment_count)} پرداخت موفق</small></Card>
-      <Card><CheckCircle2 size={20}/><span>پرداخت‌شده به هنرمندان</span><strong>{moneyFa(all.paid_to_artists)}</strong><small>{numberFa(all.paid_to_artists_count)} تسویه تکمیل‌شده</small></Card>
-      <Card><WalletCards size={20}/><span>در انتظار تسویه</span><strong>{moneyFa(all.pending_artist_payouts)}</strong><small>{numberFa(all.pending_artist_payout_count)} درخواست باز</small></Card>
+      {canPayments&&<Card><CircleDollarSign size={20}/><span>کل درآمد پلتفرم</span><strong>{moneyFa(all.revenue)}</strong><small>{numberFa(all.successful_payment_count)} پرداخت موفق</small></Card>}
+      {canPayouts&&<><Card><CheckCircle2 size={20}/><span>پرداخت‌شده به هنرمندان</span><strong>{moneyFa(all.paid_to_artists)}</strong><small>{numberFa(all.paid_to_artists_count)} تسویه تکمیل‌شده</small></Card><Card><WalletCards size={20}/><span>در انتظار تسویه</span><strong>{moneyFa(all.pending_artist_payouts)}</strong><small>{numberFa(all.pending_artist_payout_count)} درخواست باز</small></Card></>}
     </div>}
 
     <div className="segmented">
-      <button className={tab==='payments'?'is-active':''} onClick={()=>switchTab('payments')}>پرداخت کاربران</button>
-      <button className={tab==='payouts'?'is-active':''} onClick={()=>switchTab('payouts')}>تسویه هنرمندان</button>
-      <button className={tab==='earnings'?'is-active':''} onClick={()=>switchTab('earnings')}>درآمد هنرمندان</button>
+      {canPayments&&<button className={tab==='payments'?'is-active':''} onClick={()=>switchTab('payments')}>پرداخت کاربران</button>}
+      {canPayouts&&<button className={tab==='payouts'?'is-active':''} onClick={()=>switchTab('payouts')}>تسویه هنرمندان</button>}
+      {canEarnings&&<button className={tab==='earnings'?'is-active':''} onClick={()=>switchTab('earnings')}>درآمد هنرمندان</button>}
     </div>
 
+    {allowedTabs.length>0&&<>
     <Card className="toolbar-card">
       <SearchBox value={search} onChange={value=>{setSearch(value);setPage(1)}} placeholder={tab==='payments'?'شماره تراکنش یا شماره همراه':tab==='payouts'?'نام هنرمند یا شماره تراکنش':'نام هنرمند یا شماره همراه'} />
       <div className="filters">
@@ -136,7 +156,7 @@ export default function FinancePage() {
         {key:'amount',title:'مبلغ',render:x=><strong>{moneyFa(x.amount)}</strong>},
         {key:'status',title:'وضعیت',render:x=><StatusBadge value={x.status}/>},
         {key:'time',title:'ثبت درخواست',render:x=>dateTimeFa(x.submission_date)},
-        {key:'action',title:'مدیریت',render:x=><button className="button button--compact" onClick={()=>openPayout(x)}><Eye size={16}/>بررسی</button>},
+        {key:'action',title:(canPayoutReview||canPayoutPay)?'مدیریت':'جزئیات',render:x=>{const actionable=(canPayoutReview&&x.status!=='done')||(canPayoutPay&&(x.status==='approved'||x.status==='done'));return <button className="button button--compact" onClick={()=>openPayout(x)}><Eye size={16}/>{actionable?'بررسی':'مشاهده'}</button>}},
       ]}/>
       {payouts.data && <><div className="table-summary"><span>جمع درخواست‌های فیلترشده</span><strong>{moneyFa(payouts.data.total_amount)}</strong></div><Pagination count={payouts.data.count} page={page} pageSize={20} onPage={setPage}/></>}
     </> : <>
@@ -148,20 +168,27 @@ export default function FinancePage() {
         {key:'paid',title:'تسویه‌شده',render:x=>preciseMoneyFa(x.paid_total)},
         {key:'pending',title:'در صف تسویه',render:x=>preciseMoneyFa(x.pending_total)},
         {key:'remaining',title:'مانده قابل رهگیری',render:x=><strong>{preciseMoneyFa(x.remaining_total)}</strong>},
-        {key:'action',title:'عملیات',render:x=><button className="button button--compact" onClick={()=>navigate(`/artists?q=${encodeURIComponent(x.artist_phone || x.artist_name)}`)}><Eye size={16}/>هنرمند</button>},
+        ...(canArtists?[{key:'action',title:'عملیات',render:(x:ArtistEarning)=><button className="button button--compact" onClick={()=>navigate(`/artists?q=${encodeURIComponent(x.artist_phone || x.artist_name)}`)}><Eye size={16}/>هنرمند</button>}]:[]),
       ]}/>
       {earnings.data && <><div className="table-summary"><span>کل درآمد ثبت‌شده نتایج</span><strong>{preciseMoneyFa(earnings.data.total_amount)}</strong></div><Pagination count={earnings.data.count} page={page} pageSize={20} onPage={setPage}/></>}
     </>}</Card>
+    </>}
 
     <Modal open={Boolean(selectedPayment)} title="جزئیات پرداخت کاربر" onClose={()=>setSelectedPayment(null)}>{selectedPayment && <div className="receipt">
       <div className="receipt__icon"><ReceiptText size={24}/></div><div><span>شناسه تراکنش</span><strong className="mono">{selectedPayment.transaction_id}</strong></div><div><span>شماره همراه</span><strong dir="ltr">{selectedPayment.user_phone}</strong></div><div><span>مبلغ</span><strong>{moneyFa(selectedPayment.amount)}</strong></div><div><span>روش پرداخت</span><strong>{paymentMethodFa(selectedPayment.payment_method)}</strong></div><div><span>وضعیت</span><StatusBadge value={selectedPayment.status}/></div><div><span>زمان ثبت</span><strong>{dateTimeFa(selectedPayment.created_at)}</strong></div>
     </div>}</Modal>
 
-    <Modal open={Boolean(selectedPayout)} title="مدیریت تسویه هنرمند" onClose={closePayout}>{selectedPayout && <div className="form-grid">
+    <Modal open={Boolean(selectedPayout)} title={canEditSelectedPayout?"مدیریت تسویه هنرمند":"جزئیات تسویه هنرمند"} onClose={closePayout}>{selectedPayout && <div className="form-grid">
       <div className="payout-amount form-grid__full"><span>مبلغ درخواست</span><strong>{moneyFa(selectedPayout.amount)}</strong><small>{selectedPayout.artist_name}</small></div>
-      <Field label="وضعیت تسویه"><ProductSelect ariaLabel="وضعیت تسویه هنرمند" value={payoutStatus} onValueChange={setPayoutStatus} options={[{value:'pending',label:'در انتظار'},{value:'approved',label:'تأیید شده'},{value:'rejected',label:'رد شده'},{value:'done',label:'انجام شده'}]}/></Field>
-      <Field label="شماره تراکنش" hint={payoutStatus==='done'?'برای ثبت وضعیت انجام‌شده الزامی است.':'در زمان پرداخت نهایی ثبت کنید.'}><input dir="ltr" value={transactionId} onChange={e=>setTransactionId(e.target.value)}/></Field>
-      <div className="dialog-actions form-grid__full"><button className="button button--ghost" onClick={()=>setSelectedPayout(null)}>بستن</button><button className="button button--primary" disabled={busy} onClick={()=>void savePayout()}><Save size={17}/>ذخیره وضعیت</button></div>
+      {canEditSelectedPayout ? <>
+        <Field label="وضعیت تسویه"><ProductSelect ariaLabel="وضعیت تسویه هنرمند" value={payoutStatus} onValueChange={setPayoutStatus} disabled={payoutStatusOptions.length<=1} options={payoutStatusOptions}/></Field>
+        {canPayoutPay ? <Field label="شماره تراکنش" hint={payoutStatus==='done'?'برای ثبت وضعیت انجام‌شده الزامی است.':'در زمان پرداخت نهایی ثبت کنید.'}><input dir="ltr" value={transactionId} onChange={e=>setTransactionId(e.target.value)}/></Field> : selectedPayout.transaction_id ? <div className="receipt form-grid__full"><div><span>شماره تراکنش</span><strong className="mono" dir="ltr">{selectedPayout.transaction_id}</strong></div></div> : null}
+      </> : <div className="receipt form-grid__full">
+        <div><span>وضعیت</span><StatusBadge value={selectedPayout.status}/></div>
+        {selectedPayout.transaction_id&&<div><span>شماره تراکنش</span><strong className="mono" dir="ltr">{selectedPayout.transaction_id}</strong></div>}
+        <div><span>ثبت درخواست</span><strong>{dateTimeFa(selectedPayout.submission_date)}</strong></div>
+      </div>}
+      <div className="dialog-actions form-grid__full"><button className="button button--ghost" onClick={closePayout}>بستن</button>{canEditSelectedPayout&&<button className="button button--primary" disabled={busy||!canSubmitPayout} onClick={()=>void savePayout()}><Save size={17}/>ذخیره وضعیت</button>}</div>
     </div>}</Modal>
   </div>
 }

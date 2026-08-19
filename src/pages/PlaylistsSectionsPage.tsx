@@ -10,6 +10,8 @@ import { api, errorMessageFa, queryString } from '../lib/api'
 import { dateTimeFa, numberFa } from '../lib/format'
 import type { Paginated } from '../lib/types'
 import { useRemote } from '../lib/useRemote'
+import { useAuth } from '../lib/authContext'
+import { can } from '../lib/permissions'
 import { mutationFieldsMatch, pageSnapshot, reconcilePaginatedStable, removePaginatedItem, setPaginatedItem, verifyExactEntity } from '../lib/mutationSync'
 
 type Tab = 'playlists' | 'sections'
@@ -20,18 +22,19 @@ function TabButton({ active, onClick, icon, children }:{active:boolean;onClick:(
 }
 
 export default function PlaylistsSectionsPage() {
+  const {user}=useAuth();const canOfficial=can(user,'playlists.playlists'),canSections=can(user,'playlists.sections')
   const [tab, setTab] = useState<Tab>('playlists')
   return <div className="page-stack">
-    <PageHeader title="پلی‌لیست‌ها و بخش‌ها" description="ساخت پلی‌لیست‌های رسمی و مدیریت بخش‌های صفحه جستجو" />
+    <PageHeader title="پلی‌لیست‌ها و بخش‌ها" description="پلی‌لیست‌های رسمی و چیدمان بخش‌های صفحه جستجو" />
     <div className="content-tabs" role="tablist" aria-label="پلی‌لیست‌ها و بخش‌های جستجو">
       <TabButton active={tab==='playlists'} onClick={()=>setTab('playlists')} icon={<ListMusic size={18}/>}>پلی‌لیست‌ها</TabButton>
       <TabButton active={tab==='sections'} onClick={()=>setTab('sections')} icon={<LayoutGrid size={18}/>}>بخش‌های جستجو</TabButton>
     </div>
-    {tab==='playlists' ? <PlaylistsPanel/> : <SearchSectionsPanel/>}
+    {tab==='playlists' ? <PlaylistsPanel canManage={canOfficial} canManageSections={canSections}/> : <SearchSectionsPanel canManage={canSections}/>}
   </div>
 }
 
-function PlaylistsPanel(){
+function PlaylistsPanel({canManage,canManageSections}:{canManage:boolean;canManageSections:boolean}){
   const toast=useToast()
   const [page,setPage]=useState(1)
   const [open,setOpen]=useState(false)
@@ -71,21 +74,21 @@ function PlaylistsPanel(){
   }
 
   return <>
-    <TimeOfDayPlaylistsPanel/>
+    <TimeOfDayPlaylistsPanel canManage={canManageSections}/>
     <div className="section-actions">
       <div><strong>پلی‌لیست‌های رسمی</strong><span>مجموعه‌های منتخب ادمین برای نمایش در پلتفرم</span></div>
-      <button className="button button--primary" onClick={()=>{setEditing(null);setOpen(true)}}><Plus size={17}/>پلی‌لیست جدید</button>
+      {canManage&&<button className="button button--primary" onClick={()=>{setEditing(null);setOpen(true)}}><Plus size={17}/>پلی‌لیست جدید</button>}
     </div>
     <Card>{remote.error?<ErrorState message={remote.error} retry={()=>void remote.reload()}/>:<>
       <DataTable<PlaylistRecord> loading={remote.loading} rows={remote.data?.results||[]} emptyTitle="پلی‌لیستی ثبت نشده است" columns={[
         {key:'name',title:'پلی‌لیست',render:x=><div className="media-cell">{x.cover_image?<img src={x.cover_image} alt="" loading="lazy"/>:<div className="media-placeholder"><Music2 size={18}/></div>}<div><strong>{x.title}</strong><span>{numberFa(x.songs?.length||0)} آهنگ</span></div></div>},
         {key:'engagement',title:'تعامل',render:x=><div className="stacked-text"><span>{numberFa(x.likes_count)} پسند</span><small>{numberFa(x.saves_count)} ذخیره</small></div>},
         {key:'created',title:'ایجاد',render:x=>dateTimeFa(x.created_at)},
-        {key:'actions',title:'عملیات',render:x=><div className="row-actions"><button className="icon-button" onClick={()=>{setEditing(x);setOpen(true)}} aria-label="ویرایش پلی‌لیست"><Pencil size={16}/></button><button className="icon-button icon-button--danger" onClick={()=>setDel({id:x.id,title:x.title})} aria-label="حذف پلی‌لیست"><Trash2 size={16}/></button></div>}
+        ...(canManage?[{key:'actions',title:'عملیات',render:(x:PlaylistRecord)=><div className="row-actions"><button className="icon-button" onClick={()=>{setEditing(x);setOpen(true)}} aria-label="ویرایش پلی‌لیست"><Pencil size={16}/></button><button className="icon-button icon-button--danger" onClick={()=>setDel({id:x.id,title:x.title})} aria-label="حذف پلی‌لیست"><Trash2 size={16}/></button></div>}]:[])
       ]}/>
       {remote.data&&<Pagination count={remote.data.count} page={page} pageSize={20} onPage={setPage}/>}
     </>}</Card>
-    {open&&<PlaylistBuilder open item={editing} onClose={()=>setOpen(false)} onSaved={savedPlaylist}/>}
+    {canManage&&open&&<PlaylistBuilder open item={editing} onClose={()=>setOpen(false)} onSaved={savedPlaylist}/>}
     <Confirm open={Boolean(del)} title="حذف پلی‌لیست" text={`پلی‌لیست «${del?.title||''}» حذف شود؟`} confirmLabel="حذف" danger busy={busy} onClose={()=>setDel(null)} onConfirm={()=>void remove()}/>
   </>
 }

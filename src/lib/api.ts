@@ -6,7 +6,7 @@ const REFRESH_KEY = 'sedabox_admin_refresh'
 const USER_KEY = 'sedabox_admin_user'
 const SESSION_EVENT = 'sedabox:admin-session'
 
-export type StoredAdmin = { id: number; phone_number: string; first_name?: string; last_name?: string; roles?: string[]; is_staff?: boolean }
+export type StoredAdmin = { id:number; phone_number:string; first_name?:string; last_name?:string; roles?:string[]; is_staff?:boolean; is_owner_admin?:boolean; is_employee?:boolean; employee_role?:'manager'|'supervisor'|null; permissions?:Record<string,boolean> }
 
 export const session = {
   access: () => localStorage.getItem(ACCESS_KEY),
@@ -23,6 +23,10 @@ export const session = {
   updateTokens(access: string, refresh: string) {
     localStorage.setItem(ACCESS_KEY, access)
     localStorage.setItem(REFRESH_KEY, refresh)
+  },
+  updateUser(user: StoredAdmin) {
+    localStorage.setItem(USER_KEY, JSON.stringify(user))
+    window.dispatchEvent(new Event(SESSION_EVENT))
   },
   clear() {
     localStorage.removeItem(ACCESS_KEY)
@@ -144,13 +148,18 @@ export function queryString(params: Record<string, string | number | boolean | u
   return result ? `?${result}` : ''
 }
 
+export async function adminPanelSession() {
+  return api<StoredAdmin>('/admin/session/')
+}
+
 export async function adminLogin(phone: string, password: string) {
-  const result = await api<{ accessToken: string; refreshToken: string; user: StoredAdmin }>('/auth/login/password/', {
-    method: 'POST', auth: false, body: jsonBody({ phone, password }),
-  })
-  if (!result.user?.is_staff) throw new ApiError(403, { detail: 'این حساب دسترسی مدیریت ندارد.' })
-  session.save(result.accessToken, result.refreshToken, result.user)
-  return result.user
+  const result = await api<{ accessToken:string; refreshToken:string; user:StoredAdmin }>('/auth/login/password/', { method:'POST', auth:false, body:jsonBody({phone,password}) })
+  const roles=result.user?.roles||[]
+  const looksLikeEmployee=roles.includes('manager')||roles.includes('supervisor')
+  if(!result.user?.is_staff&&!looksLikeEmployee) throw new ApiError(403,{detail:'این حساب دسترسی به پنل مدیریت ندارد.'})
+  session.save(result.accessToken,result.refreshToken,result.user)
+  try { const profile=await adminPanelSession(); session.updateUser(profile); return profile }
+  catch(error){ session.clear(); throw error }
 }
 
 export async function adminLogout() {

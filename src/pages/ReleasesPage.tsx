@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { AlertTriangle, CheckCircle2, Eye, FilePenLine, History, Radio, RotateCcw, Send, ShieldX, Timer, Trash2, XCircle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { AlertTriangle, CheckCircle2, Eye, FilePenLine, History, Plus, Radio, RotateCcw, Send, ShieldX, Timer, Trash2, XCircle } from 'lucide-react'
 import { DataTable } from '../components/DataTable'
 import { PersianDateTimePicker } from '../components/PersianDateTimePicker'
 import { ProductSelect } from '../components/ProductSelect'
@@ -10,6 +11,8 @@ import { useDebouncedValue } from '../lib/hooks'
 import { dateTimeFa, dateTimeTehranFa, numberFa } from '../lib/format'
 import type { Paginated } from '../lib/types'
 import { useRemote } from '../lib/useRemote'
+import { useAuth } from '../lib/authContext'
+import { can } from '../lib/permissions'
 import { pageSnapshot, reconcilePaginatedStable, removePaginatedItem, setPaginatedItem, verifyExactEntity } from '../lib/mutationSync'
 
 type NamedRef = { id?:number; title?:string; name?:string; artistic_name?:string; artistic_name_fa?:string; artistic_name_en?:string }
@@ -36,15 +39,15 @@ type ReleaseActionResult = Release | { id:string; removed_from_admin_queue:true 
 type ReviewTab = 'release'|'tracks'
 
 const actionMap: Record<string, { label:string; icon:typeof CheckCircle2; tone?:string }> = {
-  request_changes:{label:'درخواست اصلاح',icon:FilePenLine}, reject:{label:'رد انتشار',icon:XCircle,tone:'danger'},
+  request_changes:{label:'درخواست اصلاح',icon:FilePenLine}, approve:{label:'تأیید برای انتشار',icon:CheckCircle2}, reject:{label:'رد انتشار',icon:XCircle,tone:'danger'},
   schedule:{label:'زمان‌بندی انتشار',icon:Timer}, publish:{label:'انتشار',icon:Radio}, take_down:{label:'خارج کردن از دسترس',icon:ShieldX,tone:'danger'},
   reopen:{label:'بازگشایی برای ویرایش',icon:RotateCcw}, return_to_review:{label:'بازگردانی به بررسی',icon:Send},
 }
 const expectedStatus: Record<string,string> = {
-  request_changes:'changes_requested', reject:'rejected', schedule:'scheduled', publish:'live', take_down:'taken_down', reopen:'draft', return_to_review:'in_review',
+  request_changes:'changes_requested', approve:'approved', reject:'rejected', schedule:'scheduled', publish:'live', take_down:'taken_down', reopen:'draft', return_to_review:'in_review',
 }
 const allowed: Record<string,string[]> = {
-  in_review:['request_changes','reject','schedule','publish'], changes_requested:['reject','reopen','return_to_review'], approved:['schedule','publish','return_to_review'], scheduled:['publish'], live:['take_down'], rejected:['reopen','return_to_review'], taken_down:['reopen','publish'],
+  in_review:['request_changes','approve','reject','schedule','publish'], changes_requested:['reject','reopen','return_to_review'], approved:['schedule','publish','return_to_review'], scheduled:['publish'], live:['take_down'], rejected:['reopen','return_to_review'], taken_down:['reopen','publish'],
 }
 
 const actionLabel=(action:string,status:string)=>{
@@ -105,7 +108,6 @@ const adminValidationMessage=(value:unknown)=>{
     'وارد کردن عنوان ترک الزامی است.':'عنوان این ترک ثبت نشده است.',
     'انتخاب زبان ترک الزامی است.':'زبان این ترک ثبت نشده است.',
     'برای این انتشار حداقل یک ژانر مشترک انتخاب کنید.':'ژانر مشترک برای این انتشار ثبت نشده است.',
-    'برای فایل‌های قبلاً منتشرشده وارد کردن ISRC الزامی است.':'کد ISRC برای فایل قبلاً منتشرشده ثبت نشده است.',
     'تکمیل اطلاعات آهنگساز پیشنهاد می‌شود.':'اطلاعات آهنگساز تکمیل نشده است.',
     'تکمیل اطلاعات ترانه‌سرا پیشنهاد می‌شود.':'اطلاعات ترانه‌سرا تکمیل نشده است.',
     'تکمیل اطلاعات مالک حقوق نشر پیشنهاد می‌شود.':'اطلاعات مالک حقوق نشر تکمیل نشده است.',
@@ -164,7 +166,8 @@ function InfoCell({label,value,dir}:{label:string;value:unknown;dir?:'rtl'|'ltr'
 function ValueList({values}:{values:string[]}){return values.length?<div className="review-chip-list">{values.map((value,index)=><span key={`${value}-${index}`}>{value}</span>)}</div>:<span className="muted">—</span>}
 function TextCard({label,value,dir}:{label:string;value:unknown;dir?:'rtl'|'ltr'}){const text=asText(value);return <div><span>{label}</span><p dir={dir}>{text}</p></div>}
 
-export default function ReleasesPage(){
+export default function ReleasesPage(){const{user}=useAuth();const canAdd=can(user,'release_add.edit'),canReview=can(user,'releases.review'),canPublish=can(user,'releases.publish'),canTakedown=can(user,'releases.takedown'),canDelete=can(user,'releases.delete');
+  const navigate = useNavigate()
   const [search,setSearch]=useState(''); const [status,setStatus]=useState(''); const [page,setPage]=useState(1)
   const [selected,setSelected]=useState<Release|null>(null); const [note,setNote]=useState(''); const [busy,setBusy]=useState(false)
   const [reviewTab,setReviewTab]=useState<ReviewTab>('release'); const [selectedTrackId,setSelectedTrackId]=useState<number|null>(null)
@@ -191,7 +194,7 @@ export default function ReleasesPage(){
     const target=selected; const snapshot=pageSnapshot(remote.data,target.id)
     setBusy(true)
     try{
-      const result=await api<ReleaseActionResult>(`/admin/releases/${target.id}/action/`,{method:'POST',body:jsonBody({action,note,...extra})})
+      const result=await api<ReleaseActionResult>(`/admin/releases/${target.id}/action/`,{method:'POST',body:jsonBody({action,note,lock_version:target.lock_version,...extra})})
       const intendedStatus=expectedStatus[action]
       if(action==='reopen'){remote.setData(current=>removePaginatedItem(current,target.id));close()}
       else{
@@ -236,17 +239,20 @@ export default function ReleasesPage(){
   const visibleValidationWarnings=validationWarnings.filter(item=>!hiddenReviewWarning(item.message))
   const coverUrl=resolveMediaUrl(asText(metadata.cover_url)==='—'?'':String(metadata.cover_url||''))
   const hasDeletedState=Boolean(selected&&((selected.removal_state&&selected.removal_state!=='active')||(selected.deleted_track_count||0)>0||selected.tracks?.some(track=>track.status==='deleted')))
+  const availableActions=selected?releaseActions(selected).filter(key=>key==='publish'||key==='schedule'?canPublish:key==='take_down'?canTakedown:key==='reopen'&&selected.status==='taken_down'?canTakedown:canReview):[]
+  const canDeleteSelected=Boolean(selected&&canDelete&&selected.status!=='draft')
+  const hasOperationalActions=availableActions.length>0||canDeleteSelected
 
-  return <div className="page-stack"><PageHeader title="بررسی انتشارها" description="کنترل کامل چرخه بررسی، تأیید، زمان‌بندی و انتشار آثار"/>
-    <Card className="toolbar-card"><SearchBox value={search} onChange={v=>{setSearch(v);setPage(1)}} placeholder="نام انتشار یا هنرمند"/><div className="filters"><ProductSelect ariaLabel="فیلتر وضعیت انتشارها" value={status} onValueChange={value=>{setStatus(value);setPage(1)}} options={[{value:'',label:'همه وضعیت‌ها'},{value:'in_review',label:'در حال بررسی'},{value:'changes_requested',label:'نیازمند اصلاح'},{value:'approved',label:'تأیید شده'},{value:'scheduled',label:'زمان‌بندی شده'},{value:'live',label:'منتشر شده'},{value:'rejected',label:'رد شده'},{value:'taken_down',label:'خارج از دسترس'}]}/></div></Card>
+  return <div className="page-stack"><PageHeader title="بررسی انتشارها" description={canPublish?"بررسی، تأیید و انتشار آثار":"بررسی و پیگیری وضعیت انتشار آثار"} actions={canAdd?<button className="button button--primary" onClick={()=>navigate('/releases/add')}><Plus size={16}/>افزودن انتشار</button>:undefined}/>
+    <Card className="toolbar-card"><SearchBox value={search} onChange={v=>{setSearch(v);setPage(1)}} placeholder="نام انتشار یا هنرمند"/><div className="filters"><ProductSelect ariaLabel="فیلتر وضعیت انتشارها" value={status} onValueChange={value=>{setStatus(value);setPage(1)}} options={[{value:'',label:'همه وضعیت‌ها'},...(canAdd?[{value:'draft',label:'پیش‌نویس‌های مدیریت'}]:[]),{value:'in_review',label:'در حال بررسی'},{value:'changes_requested',label:'نیازمند اصلاح'},{value:'approved',label:'تأیید شده'},{value:'scheduled',label:'زمان‌بندی شده'},{value:'live',label:'منتشر شده'},{value:'rejected',label:'رد شده'},{value:'taken_down',label:'خارج از دسترس'}]}/></div></Card>
     <Card>{remote.error?<ErrorState message={remote.error} retry={()=>void remote.reload()}/>:<><DataTable<Release> loading={remote.loading} rows={remote.data?.results||[]} columns={[
       {key:'title',title:'انتشار',render:r=><div><strong>{r.title}</strong><div className="subline">{r.primary_artist?.artistic_name||r.primary_artist?.name||'—'}</div></div>},
       {key:'type',title:'نوع',render:r=>releaseTypeFa[r.release_type||'']||'نامشخص'}, {key:'status',title:'وضعیت',render:r=><div className="release-state-cell"><StatusBadge value={r.status}/>{releaseRemovalLabel(r)&&<small>{releaseRemovalLabel(r)}</small>}</div>},
       {key:'tracks',title:'ترک‌ها',render:r=>numberFa(r.tracks?.length||0)}, {key:'updated',title:'آخرین تغییر',render:r=>dateTimeFa(String(r.updated_at||r.created_at||''))},
-      {key:'action',title:'بررسی',render:r=><button className="button button--compact" onClick={()=>void open(r)}><Eye size={16}/>جزئیات</button>},
+      {key:'action',title:(canReview||canPublish||canTakedown||canDelete)?'بررسی':'مشاهده',render:r=>r.status==='draft'&&canAdd?<button className="button button--compact" onClick={()=>navigate(`/releases/add/${r.id}`)}><FilePenLine size={16}/>ادامه ویرایش</button>:<button className="button button--compact" onClick={()=>void open(r)}><Eye size={16}/>جزئیات</button>},
     ]}/>{remote.data&&<Pagination count={remote.data.count} page={page} pageSize={20} onPage={setPage}/>}</>}</Card>
 
-    <Modal open={Boolean(selected)} title="بررسی کامل انتشار" onClose={close} wide className="release-review-modal">{selected&&<div className="release-review">
+    <Modal open={Boolean(selected)} title={hasOperationalActions?"بررسی کامل انتشار":"جزئیات انتشار"} onClose={close} wide className="release-review-modal">{selected&&<div className="release-review">
       <div className="release-review-head">
         {coverUrl?<img src={coverUrl} alt="کاور انتشار"/>:<div className="release-review-cover-empty">بدون کاور</div>}
         <div className="release-review-title"><span>{releaseTypeFa[selected.release_type||'']||'انتشار'}</span><h3>{selected.title}</h3><p dir="ltr">{selected.title_en||'—'}</p><small>{selected.primary_artist?.artistic_name||selected.primary_artist?.name||'—'}</small></div>
@@ -295,12 +301,11 @@ export default function ReleasesPage(){
       </div>}
       </div>
 
-      <div className={`release-review-actions${hasDeletedState?' release-review-actions--deleted':''}`}>
-        {!hasDeletedState&&<Field label="توضیح این اقدام (اختیاری)"><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="در صورت نیاز، دلیل یا توضیح کوتاهی ثبت کنید…"/></Field>}
-        <div className="action-grid">{releaseActions(selected).map(key=>{const item=actionMap[key];const Icon=item.icon;const isSchedule=key==='schedule';return <button key={key} className={`button ${item.tone==='danger'?'button--danger':key==='publish'?'button--primary':isSchedule?'button--schedule':'button--ghost'}`} disabled={busy} onClick={()=>isSchedule?openSchedule():void act(key)}><Icon size={17}/>{actionLabel(key,selected.status)}</button>})}</div>
-        {releaseActions(selected).length===0&&selected.status==='taken_down'&&<div className="release-no-restore"><ShieldX size={16}/><span>برای این انتشار عملیات بازگردانی در دسترس نیست. سوابق را بررسی کنید یا در صورت اطمینان از حذف دائمی استفاده کنید.</span></div>}
-        <div className="release-destructive-row"><span><strong>حذف رکورد انتشار</strong><small>برای پاک‌سازی قطعی این انتشار و داده‌های اختصاصی وابسته به آن.</small></span><button type="button" className="button button--danger button--compact" disabled={busy} onClick={()=>setDeleteOpen(true)}><Trash2 size={15}/>حذف دائمی</button></div>
-      </div>
+      {hasOperationalActions&&<div className={`release-review-actions${hasDeletedState?' release-review-actions--deleted':''}`}>
+        {!hasDeletedState&&availableActions.length>0&&<Field label="توضیح این اقدام (اختیاری)"><textarea value={note} onChange={e=>setNote(e.target.value)} placeholder="در صورت نیاز، دلیل یا توضیح کوتاهی ثبت کنید…"/></Field>}
+        {availableActions.length>0&&<div className="action-grid">{availableActions.map(key=>{const item=actionMap[key];const Icon=item.icon;const isSchedule=key==='schedule';return <button key={key} className={`button ${item.tone==='danger'?'button--danger':key==='publish'||key==='approve'?'button--primary':isSchedule?'button--schedule':'button--ghost'}`} disabled={busy} onClick={()=>isSchedule?openSchedule():void act(key)}><Icon size={17}/>{actionLabel(key,selected.status)}</button>})}</div>}
+        {canDeleteSelected&&<div className="release-destructive-row"><span><strong>حذف رکورد انتشار</strong><small>برای پاک‌سازی قطعی این انتشار و داده‌های اختصاصی وابسته به آن.</small></span><button type="button" className="button button--danger button--compact" disabled={busy} onClick={()=>setDeleteOpen(true)}><Trash2 size={15}/>حذف دائمی</button></div>}
+      </div>}
     </div>}</Modal>
 
     <Modal open={Boolean(selected)&&historyOpen} title="سابقه انتشار" onClose={()=>setHistoryOpen(false)} wide className="release-history-modal">{selected&&<div className="release-history-dialog">

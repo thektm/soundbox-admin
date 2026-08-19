@@ -22,7 +22,7 @@ const typeLabel=(type:SectionType)=>type==='song'?'آهنگ':type==='album'?'آ�
 const sizeLabel=(size:string)=>size==='small'?'کوچک':size==='big'?'بزرگ':'متوسط'
 const asItem=(value:Candidate,type:SectionType):SectionItem=>({id:value.id,title:value.title,subtitle:type==='song'?(value as Song).artist_name:type==='album'?(value as AlbumResult).artist_name||'':'',image:(value as Song|AlbumResult|PlaylistRecord).cover_image})
 
-export function SearchSectionsPanel(){
+export function SearchSectionsPanel({canManage=true}:{canManage?:boolean}){
   const toast=useToast();const[page,setPage]=useState(1);const[search,setSearch]=useState('');const q=useDebouncedValue(search);const[open,setOpen]=useState(false);const[editing,setEditing]=useState<SearchSection|null>(null);const[del,setDel]=useState<SearchSection|null>(null);const[busy,setBusy]=useState(false)
   const remote=useRemote<Paginated<SearchSection>>('/admin/sections/'+queryString({q,page,page_size:20}))
   const sectionVisible=(item:SearchSection)=>{const needle=q.trim().toLocaleLowerCase();return !needle||`${item.title||''} ${item.title_en||''}`.toLocaleLowerCase().includes(needle)}
@@ -30,14 +30,14 @@ export function SearchSectionsPanel(){
   async function remove(){if(!del)return;const target=del;const snapshot=pageSnapshot(remote.data,target.id);setBusy(true);try{await api(`/admin/sections/${target.id}/`,{method:'DELETE'});remote.setData(current=>removePaginatedItem(current,target.id));if(editing?.id===target.id){setEditing(null);setOpen(false)};toast.show('بخش جستجو حذف شد.','success');setDel(null);syncSection(target.id,snapshot,false,'missing')}catch(err){toast.show(errorMessageFa(err),'error')}finally{setBusy(false)}}
   const savedSection=(saved:SearchSection)=>{const snapshot=pageSnapshot(remote.data,saved.id);const isCreate=snapshot.index<0;const visible=sectionVisible(saved)&&(!isCreate||page===1);const preferred=isCreate&&visible?[saved.id,...snapshot.order]:snapshot.order;remote.setData(current=>setPaginatedItem(current,saved,{visible,indexHint:isCreate?0:snapshot.index}));setEditing(null);setOpen(false);syncSection(saved,{...snapshot,order:preferred},visible,'saved')}
   return <>
-    <div className="section-actions"><div><strong>بخش‌های صفحه جستجو</strong><span>کنترل ردیف‌هایی که کاربر در Search می‌بیند و محتوای هر ردیف</span></div><button className="button button--primary" onClick={()=>{setEditing(null);setOpen(true)}}><Plus size={16}/>بخش جدید</button></div>
+    <div className="section-actions"><div><strong>بخش‌های صفحه جستجو</strong><span>کنترل ردیف‌هایی که کاربر در Search می‌بیند و محتوای هر ردیف</span></div>{canManage&&<button className="button button--primary" onClick={()=>{setEditing(null);setOpen(true)}}><Plus size={16}/>بخش جدید</button>}</div>
     <Card className="toolbar-card"><SearchBox value={search} onChange={v=>{setSearch(v);setPage(1)}} placeholder="عنوان فارسی یا انگلیسی بخش"/></Card>
     <Card>{remote.error?<ErrorState message={remote.error} retry={()=>void remote.reload()}/>:<><DataTable<SearchSection> loading={remote.loading} rows={remote.data?.results||[]} emptyTitle="بخشی برای صفحه جستجو ثبت نشده است" columns={[
       {key:'section',title:'بخش',render:x=><div className="media-cell">{x.icon_logo?<img src={x.icon_logo} alt="" loading="lazy"/>:<div className="media-placeholder"><LayoutGrid size={17}/></div>}<div><strong>{x.title}</strong><span>{typeLabel(x.type)} · {sizeLabel(x.item_size)}</span></div></div>},
       {key:'items',title:'محتوا',render:x=><span>{numberFa(x.item_count||0)} {typeLabel(x.type)}</span>},
-      {key:'actions',title:'عملیات',render:x=><div className="row-actions"><button className="icon-button" onClick={()=>{setEditing(x);setOpen(true)}} aria-label="ویرایش بخش"><Pencil size={16}/></button><button className="icon-button icon-button--danger" onClick={()=>setDel(x)} aria-label="حذف بخش"><Trash2 size={16}/></button></div>},
+      ...(canManage?[{key:'actions',title:'عملیات',render:(x:SearchSection)=><div className="row-actions"><button className="icon-button" onClick={()=>{setEditing(x);setOpen(true)}} aria-label="ویرایش بخش"><Pencil size={16}/></button><button className="icon-button icon-button--danger" onClick={()=>setDel(x)} aria-label="حذف بخش"><Trash2 size={16}/></button></div>}]:[]),
     ]}/>{remote.data&&<Pagination count={remote.data.count} page={page} pageSize={20} onPage={setPage}/>}</>}</Card>
-    {open&&<SectionEditor open item={editing} onClose={()=>setOpen(false)} onSaved={savedSection}/>}
+    {canManage&&open&&<SectionEditor open item={editing} onClose={()=>setOpen(false)} onSaved={savedSection}/>}
     <Confirm open={Boolean(del)} title="حذف بخش جستجو" text={`بخش «${del?.title||''}» حذف شود؟`} confirmLabel="حذف" danger busy={busy} onClose={()=>setDel(null)} onConfirm={()=>void remove()}/>
   </>
 }

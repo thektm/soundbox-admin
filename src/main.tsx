@@ -3,6 +3,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { ToastProvider } from './components/Toast'
 import { AuthProvider } from './lib/auth'
+import { ImageCropperProvider } from './contexts/ImageCropperContext'
 import App from './app/App'
 import './styles.css'
 
@@ -12,7 +13,7 @@ if (!rootElement) throw new Error('ریشه رابط مدیریت پیدا نش�
 createRoot(rootElement).render(
   <ErrorBoundary>
     <BrowserRouter>
-      <AuthProvider><ToastProvider><App /></ToastProvider></AuthProvider>
+      <AuthProvider><ToastProvider><ImageCropperProvider><App /></ImageCropperProvider></ToastProvider></AuthProvider>
     </BrowserRouter>
   </ErrorBoundary>,
 )

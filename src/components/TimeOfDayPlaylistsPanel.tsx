@@ -34,7 +34,7 @@ const move = <T,>(items:T[],from:number,to:number) => {
   return next
 }
 
-export function TimeOfDayPlaylistsPanel(){
+export function TimeOfDayPlaylistsPanel({canManage=true}:{canManage?:boolean}){
   const [editing,setEditing]=useState<Slot|null>(null)
   const groups=useRemote<Paginated<EventGroup>>('/admin/event-playlist/'+queryString({page_size:100}))
   const byTime=useMemo(()=>{
@@ -72,11 +72,11 @@ export function TimeOfDayPlaylistsPanel(){
               {playlist?<><div className="day-slot__art">{playlist.cover_image?<img src={playlist.cover_image} alt="" loading="lazy"/>:<Music2 size={14}/>}</div><strong title={playlist.title}>{playlist.title}</strong></>:<span>جایگاه خالی</span>}
             </div>})}
           </div>
-          <button type="button" className="button button--ghost button--compact" onClick={()=>setEditing(slot)} disabled={groups.loading}><Pencil size={14}/>{group?'مدیریت':'تنظیم'}</button>
+          {canManage&&<button type="button" className="button button--ghost button--compact" onClick={()=>setEditing(slot)} disabled={groups.loading}><Pencil size={14}/>{group?'مدیریت':'تنظیم'}</button>}
         </article>
       })}
     </div>}
-    {editing&&<TimeSlotEditor slot={editing} group={byTime.get(editing.key)} open onClose={()=>setEditing(null)} onSaved={savedGroup}/>}
+    {canManage&&editing&&<TimeSlotEditor slot={editing} group={byTime.get(editing.key)} open onClose={()=>setEditing(null)} onSaved={savedGroup}/>}
   </section>
 }
 

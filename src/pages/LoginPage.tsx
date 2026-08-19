@@ -3,6 +3,7 @@ import { Eye, EyeOff, LoaderCircle, LockKeyhole, Phone } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { adminLogin, errorMessageFa } from '../lib/api'
 import { useAuth } from '../lib/authContext'
+import { firstAllowedPath } from '../lib/permissions'
 
 export default function LoginPage() {
   const [phone, setPhone] = useState('')
@@ -21,8 +22,9 @@ export default function LoginPage() {
     try {
       const user = await adminLogin(phone.trim(), password)
       setUser(user)
-      const from = (location.state as { from?: string } | null)?.from || '/'
-      navigate(from, { replace: true })
+      const requested=(location.state as {from?:string}|null)?.from
+      const destination=user.is_owner_admin?(requested||'/'):firstAllowedPath(user)
+      navigate(destination,{replace:true})
     } catch (err) { setError(errorMessageFa(err, 'ورود انجام نشد. اطلاعات حساب را بررسی کنید.')) }
     finally { setBusy(false) }
   }
@@ -54,12 +56,12 @@ export default function LoginPage() {
     <section className="login-panel">
       <form className="login-card" onSubmit={submit}>
         <div className="login-brand"><img src="/sedabox-logo.png" alt="نشان صداباکس" /><div><strong>صداباکس</strong><span>پنل مدیریت</span></div></div>
-        <div className="login-copy"><h2>ورود مدیر</h2><p>با حساب مدیریتی خود وارد شوید.</p></div>
+        <div className="login-copy"><h2>ورود به پنل</h2><p>شماره همراه و رمز عبور خود را وارد کنید.</p></div>
         {error && <div className="inline-error" role="alert">{error}</div>}
         <label className="login-field"><span>شماره همراه</span><div><Phone size={18} /><input inputMode="tel" autoComplete="username" dir="ltr" value={phone} onChange={e => setPhone(e.target.value)} placeholder="۰۹۱۲۱۲۳۴۵۶۷" /></div></label>
         <label className="login-field"><span>رمز عبور</span><div><LockKeyhole size={18} /><input type={show ? 'text' : 'password'} autoComplete="current-password" dir="ltr" value={password} onChange={e => setPassword(e.target.value)} placeholder="رمز عبور" /><button type="button" className="password-toggle" onClick={() => setShow(value => !value)} aria-label={show ? 'پنهان کردن رمز' : 'نمایش رمز'}>{show ? <EyeOff size={18} /> : <Eye size={18} />}</button></div></label>
         <button className="button button--primary button--full" type="submit" disabled={busy}>{busy && <LoaderCircle className="spin" size={18} />} ورود به پنل</button>
-        <p className="login-note">دسترسی این بخش فقط برای حساب‌های مدیر فعال است.</p>
+        <p className="login-note">پنل مدیریت صداباکس</p>
       </form>
     </section>
   </main>

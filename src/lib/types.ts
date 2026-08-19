@@ -40,6 +40,7 @@ export type Artist = {
   name_en?: string
   artistic_name?: string
   artistic_name_en?: string
+  unique_id?: string | null
   email?: string | null
   city?: string
   city_en?: string
@@ -54,6 +55,7 @@ export type Artist = {
   verified: boolean
   created_at: string
   has_user?: boolean
+  social_accounts?: Array<{id:number;platform:number;platform_name?:string;platform_slug?:string;username?:string;url?:string}>
 }
 
 export type ArtistAuth = Record<string, unknown> & {
@@ -242,4 +244,11 @@ export type DashboardSummary = Record<string, unknown> & {
   money: { platform_revenue: number; revenue_30_days: number; successful_payments_count: number; pending_payments_count: number; failed_payments_count: number; artist_earned_total: number; artist_paid_total: number; artist_pending_payout_total: number; artist_pending_payout_count: number; gross_after_paid_payouts: number }
   recent_transactions: PaymentTransaction[]
   recent_payouts: DepositRequest[]
+}
+
+
+export type AdminEmployee = {
+  id:number; phone_number:string; first_name:string; last_name:string; email?:string|null;
+  role:'manager'|'supervisor'; roles:string[]; is_active:boolean; date_joined:string; last_login_at?:string|null;
+  permissions:Record<string,boolean>;
 }
