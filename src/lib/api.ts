@@ -153,7 +153,7 @@ export async function adminPanelSession() {
 }
 
 export async function adminLogin(phone: string, password: string) {
-  const result = await api<{ accessToken:string; refreshToken:string; user:StoredAdmin }>('/auth/login/password/', { method:'POST', auth:false, body:jsonBody({phone,password}) })
+  const result = await api<{ accessToken:string; refreshToken:string; user:StoredAdmin }>('/auth/login/password/', { method:'POST', auth:false, body:jsonBody({phone,password,admin_login:true}) })
   const roles=result.user?.roles||[]
   const looksLikeEmployee=roles.includes('manager')||roles.includes('supervisor')
   if(!result.user?.is_staff&&!looksLikeEmployee) throw new ApiError(403,{detail:'این حساب دسترسی به پنل مدیریت ندارد.'})
